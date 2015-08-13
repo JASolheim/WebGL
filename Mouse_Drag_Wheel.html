@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+
+<!--
+Mouse_Drag_Wheel.html    Jeffery Solheim    Illustrates dragging with mouse and use of mouse wheel.
+-->
+
+<html>
+
+  <head>
+  <meta charset='UTF-8'>
+  <title>WebGL Mouse Drag and Wheel</title>
+  <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+  <script type='text/javascript' src='webgl-utils.js'></script>
+  <script type='text/javascript' src='initShaders.js'></script>
+  <script type='text/javascript' src='MV.js'></script>
+  <!-- ================================================================================= -->
+  <script id='vertex-shader' type='x-shader/x-vertex'>
+    attribute vec3 position;
+    attribute vec3 color;
+    uniform   mat4 projectionMatrix;
+    varying mediump vec4 vColor;
+    void main()
+      {
+      gl_Position = projectionMatrix * vec4 ( position, 1.0 ) ;
+      vColor = vec4(color,1.0);
+      }
+  </script>
+  <!-- ================================================================================= -->
+  <script id='fragment-shader' type='x-shader/x-fragment'>
+    varying mediump vec4 vColor;
+    void main()
+      {
+      gl_FragColor = vColor;
+      }
+  </script>
+  <!-- ================================================================================= -->
+  <script>
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    // global variables accessed by multiple functions ...
+    var gl ;
+    var canvas ;
+    var mouseLeftDown ;   //  true only while left mouse button is depressed
+    var selectedPolygon = 3 ;
+    var prevX, prevY, currX, currY, deltaX, deltaY, deltaZ ;
+    var position ;
+    var positionBuffer ;
+    var color ;
+    var colorBuffer ;
+    const pink  = vec3(1.00, 0.80, 0.86) ;
+    const lime  = vec3(0.30, 0.90, 0.00) ;
+    const azure = vec3(0.53, 0.81, 0.98) ;
+    const black = vec3(1,0,0) ;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    window.onload = init ;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function init ()
+      {
+      document.documentElement.addEventListener ( 'keydown', keyDownHandler ) ;
+      document.documentElement.addEventListener ( 'wheel', windowWheelHandler ) ;
+      canvas = document.getElementById ( 'glCanvas' ) ;
+      canvas.addEventListener ( 'mousedown', canvasMouseDownHandler ) ;
+      canvas.addEventListener ( 'mouseup', canvasMouseUpHandler ) ;
+      canvas.addEventListener ( 'mousemove', canvasMouseMoveHandler ) ;
+      gl = WebGLUtils.setupWebGL( canvas );
+      var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+      gl.useProgram ( program ) ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      position
+        =  [
+           // pink triangle: 3 vertices, each having x- & y-coordinates
+           vec3(-0.6, -0.1, +0.51),
+           vec3(+0.0, -0.1, +0.51),
+           vec3(-0.3, +0.6, +0.51),
+           // lime square: 4 vertices, each having x- & y-coordinates
+           vec3(-0.4, -0.6, +0.3253),
+           vec3(+0.2, -0.6, +0.3253),
+           vec3(+0.2, +0.0, +0.3253),
+           vec3(-0.4, +0.0, +0.3253),
+           // azure pentagon: 5 vertices, each having x- & y-coordinates
+           vec3(+0.90, +0.20, +0.137),
+           vec3(+0.49, +0.77, +0.137),
+           vec3(-0.19, +0.55, +0.137),
+           vec3(-0.19, -0.15, +0.137),
+           vec3(+0.49, -0.37, +0.137) 
+         ] ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+      gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+      positionBuffer = gl.createBuffer() ;
+      gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+      gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+      gl.vertexAttribPointer ( program.vertexPosAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      color
+        =  [
+           // pink triangle: 3 vertices, each having R, G, & B
+           pink, pink, pink,
+           // lime square: 4 vertices, each having R, G, & B
+           lime, lime, lime, lime,
+           // azure pentagon: 5 vertices, each having R, G, & B
+           azure, azure, azure, azure, azure
+           ] ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+      gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+      colorBuffer = gl.createBuffer() ;
+      gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+      gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+      gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      var projectionMatrix = ortho ( -1.0, +1.0, -1.0, +1.0, -1.0, +1.0 ) ;
+      program.matrixLocAttrib = gl.getUniformLocation ( program, 'projectionMatrix' ) ;
+      gl.uniformMatrix4fv ( program.matrixLocAttrib, false, flatten(projectionMatrix) ) ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      gl.clearColor ( 0.2, 0.2, 0.2, 1.0 ) ;
+      gl.enable ( gl.DEPTH_TEST ) ;
+      window.requestAnimationFrame ( display ) ;
+      } // end init function
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function display ()
+      {
+      gl.clear ( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT ) ;
+      gl.drawArrays ( gl.TRIANGLE_FAN, 0, 3 ) ;
+      gl.drawArrays ( gl.TRIANGLE_FAN, 3, 4 ) ;
+      gl.drawArrays ( gl.TRIANGLE_FAN, 7, 5 ) ;
+      setColor ( selectedPolygon, black ) ;
+      if ( selectedPolygon === 3 )
+        {  gl.drawArrays(gl.LINE_LOOP,0,3);  setColor(3,pink);  }
+      else if ( selectedPolygon === 4 )
+        {  gl.drawArrays(gl.LINE_LOOP,3,4);  setColor(4,lime);  }
+      else if ( selectedPolygon === 5 )
+        {  gl.drawArrays(gl.LINE_LOOP,7,5);  setColor(5,azure);  }
+      gl.flush() ;
+      } // end display
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function keyDownHandler ( event )
+      {
+      var keyValue ;
+      if ( event.key === undefined ) // in Chrome
+        keyValue = event.keyCode ;
+      else // in Firefox
+        keyValue = event.key.charCodeAt(0) ;
+      if ( keyValue >= '3'.charCodeAt(0) && keyValue <= '5'.charCodeAt(0) )
+        {
+        selectedPolygon = (keyValue - '0'.charCodeAt(0)) ;
+        }
+      window.requestAnimationFrame ( display ) ;
+      }
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function canvasMouseDownHandler( event )
+      {
+      if ( event.button === 0 ) // left mouse button
+        {
+        mouseLeftDown = true ;
+        var xDown = 2 * event.clientX / canvas.width - 1 ;
+        var yDown = 1 - 2 * event.clientY / canvas.height ;
+        prevX = currX = xDown ;
+        prevY = currY = yDown ;
+        }
+      } // end canvasMouseDownHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function canvasMouseUpHandler( event )
+      {
+      if ( event.button === 0 ) // left mouse button
+        {
+        mouseLeftDown = false ;
+        }
+      } // end canvasMouseUpHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function canvasMouseMoveHandler( event )
+      {
+      if ( (event.button === 0) && mouseLeftDown )
+        {
+        // dragging with left mouse button depressed
+        currX = 2 * event.clientX / canvas.width - 1 ;
+        currY = 1 - 2 * event.clientY / canvas.height ;
+        deltaX = currX - prevX ;
+        deltaY = currY - prevY ;
+        prevX = currX ;
+        prevY = currY ;
+        if ( selectedPolygon === 3 )
+          {
+          position[0][0] += deltaX;  position[0][1] += deltaY;
+          position[1][0] += deltaX;  position[1][1] += deltaY;
+          position[2][0] += deltaX;  position[2][1] += deltaY;
+          }
+        else if ( selectedPolygon === 4 )
+          {
+          position[3][0] += deltaX;  position[3][1] += deltaY;
+          position[4][0] += deltaX;  position[4][1] += deltaY;
+          position[5][0] += deltaX;  position[5][1] += deltaY;
+          position[6][0] += deltaX;  position[6][1] += deltaY;
+          }
+        else if ( selectedPolygon === 5 )
+          {
+          position[ 7][0] += deltaX;  position[ 7][1] += deltaY;
+          position[ 8][0] += deltaX;  position[ 8][1] += deltaY;
+          position[ 9][0] += deltaX;  position[ 9][1] += deltaY;
+          position[10][0] += deltaX;  position[10][1] += deltaY;
+          position[11][0] += deltaX;  position[11][1] += deltaY;
+          }
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.DYNAMIC_DRAW ) ;
+        window.requestAnimationFrame ( display ) ;
+        }
+      } // end canvasMouseMoveHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function windowWheelHandler( event )
+      {
+      var deltaZ = event.deltaY / 1000 ;
+      deltaZ = (( event.deltaY < 0 ? -1 : +1 ) * 0.0353) ;
+      if ( selectedPolygon === 3 )
+        {
+        position[0][2] += deltaZ ;
+        position[1][2] += deltaZ ;
+        position[2][2] += deltaZ ;
+        }
+      else if ( selectedPolygon === 4 )
+        {
+        position[3][2] += deltaZ ;
+        position[4][2] += deltaZ ;
+        position[5][2] += deltaZ ;
+        position[6][2] += deltaZ ;
+        }
+      else if ( selectedPolygon === 5 )
+        {
+        position[ 7][2] += deltaZ ;
+        position[ 8][2] += deltaZ ;
+        position[ 9][2] += deltaZ ;
+        position[10][2] += deltaZ ;
+        position[11][2] += deltaZ ;
+        }
+      gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+      gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.DYNAMIC_DRAW ) ;
+      window.requestAnimationFrame ( display ) ;
+      event.preventDefault() ;
+      }
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    function setColor ( polygon, toColor )
+      {
+      if ( selectedPolygon === 3 )
+        {  color[0]=toColor;  color[1]=toColor;  color[2]=toColor;  }
+      else if ( selectedPolygon === 4 )
+        {  color[3]=toColor;  color[4]=toColor;  color[5]=toColor;  color[6]=toColor;  }
+      else if ( selectedPolygon === 5 )
+        {  color[7]=toColor;  color[8]=toColor;  color[9]=toColor;  color[10]=toColor;  color[11]=toColor;  }
+      gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+      gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+      }
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+  </script>
+  <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <table>
+      <tr>
+        <td>
+            <canvas id='glCanvas' width='500' height='500'>
+              Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+            </canvas>
+        </td>
+        <td>
+          <p style='font-size:x-large;'>
+          Select triangle&nbsp;by&nbsp;pressing&nbsp;'3', square&nbsp;by&nbsp;pressing&nbsp;'4',
+          &amp;&nbsp;pentagon&nbsp;by&nbsp;pressing&nbsp;'5'.<br>
+          Currently selected figure is indicated by its red outline.<br>
+          Initially, triangle is selected by default.<br><br>
+          Depress left mouse button &amp; drag currently selected figure horizontally &amp; vertically.<br><br>
+          Turn mouse wheel &amp; move currently selected figure in &plusmn;&nbsp;z&#8209;direction.
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+
+</html>
