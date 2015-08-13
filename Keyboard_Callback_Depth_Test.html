@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<!--
+Keyboard_Callback_Depth_Test.html    Jeffery Solheim    Illustrates use of keyboard "callback" functions and depth testing in 3-D setting.
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Keyboard Callback &amp; Depth Testing</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec3 position;
+      attribute vec3 color;
+      varying mediump vec4 vColor;
+      uniform mat4 redModelView;
+      uniform mat4 greenModelView;
+      uniform mat4 blueModelView;
+      uniform mat4 projection;
+      void main()
+        {
+        if ( color.x >= 1.0 ) // red
+          gl_Position = projection * redModelView * vec4(position,1.0);
+
+        else if ( color.y >= 1.0 ) // green
+          gl_Position = projection * greenModelView * vec4(position,1.0);
+
+        else if ( color.z >= 1.0 ) // blue
+          gl_Position = projection * blueModelView * vec4(position,1.0);
+
+        else // must be an axis (at least in this program's design!)
+          gl_Position = projection * vec4(position,1.0);
+
+        vColor = vec4(color,1.0);
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_FragColor = vColor;
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables accessed by multiple functions ...
+      var canvas ;          //  an HTMLCanvasElement
+      var gl ;              //  a WebGLRenderingContext
+      var positionBuffer ;  //  a WebGLBuffer
+      var position ;        //  an array of positions of vertices
+      var colorBuffer ;     //  a WebGLBuffer
+      var color ;           //  an array of colors of vertices
+      var projectionLoc ;   //  location of projection within vertex shader
+      var redOffsetZ ;
+      var greenOffsetZ ;
+      var blueOffsetZ ;
+      var redModelViewLoc ;
+      var greenModelViewLoc ;
+      var blueModelViewLoc ;
+      var currentColorSelection ; // red circle, green triangle, or blue rectangle
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        canvas = document.getElementById ( 'myGlCanvas' ) ;
+        document.documentElement.addEventListener ( 'keypress', canvasKeyPressHandler ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        position
+         = [   vec3(-0.9,+0.0,+0.0),   vec3(+0.9,+0.0,+0.0),   //  x-axis (2 points)
+               vec3(+0.0,-0.9,+0.0),   vec3(+0.0,+0.9,+0.0),   //  y-axis (2 points)
+               vec3(-0.3,-0.3,+0.2),   vec3(+0.7,-0.3,+0.2),   vec3(+0.2,+0.7,+0.2),  //  green triangle (3 points)
+               vec3(-0.6,+0.4,+0.3),   vec3(-0.6,-0.6,+0.3),   //  blue rectangle (first 2 points)
+               vec3(+0.2,-0.6,+0.3),   vec3(+0.2,+0.4,+0.3),   //  blue rectangle (second 2 points)
+               vec3(-0.4,+0.3,+0.1)    // red circle's center
+           ] ;
+        // add points around circle in preparation for use of TRIANGLE_FAN
+        for ( var beta = 0 ; beta <= 720 ; beta ++ )
+          {
+          var theta = beta / 360.0 * Math.PI ;
+          var x = -0.4 + 0.5 * Math.cos(theta) ;
+          var y = +0.3 + 0.5 * Math.sin(theta) ;
+          var z = +0.1 ;
+          position.push ( vec3 ( x, y, z ) ) ;
+          }
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        color
+         = [  vec3(0.9,0.6,0.0),  vec3(0.9,0.6,0.0),  //  x-axis (2 colors)
+              vec3(0.9,0.6,0.0),  vec3(0.9,0.6,0.0),  //  y-axis (2 colors)
+              vec3(0.6,1.0,0.6),  vec3(0.6,1.0,0.6),  vec3(0.6,1.0,0.6),  //  green triangle (3 colors)
+              vec3(0.4,0.7,1.0),  vec3(0.4,0.7,1.0),  //  blue rectangle (first 2 colors)
+              vec3(0.4,0.7,1.0),  vec3(0.4,0.7,1.0),  //  blue rectangle (second 2 colors)
+              vec3(1.0,0.6,0.7)   //  red circle's center (1 color)
+           ] ;
+        // add points around circle in preparation for use of TRIANGLE_FAN
+        for ( var beta = 0 ; beta <= 720 ; beta ++ )
+          color.push ( vec3(1.0,0.6,0.7) ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+        gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+        colorBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        var pMatrix = ortho ( -1.0, +1.0, -1.0, +1.0, -1.0, +1.0 ) ;
+        console.info ( 'projection matrix is ... ' + pMatrix ) ;
+        // Note how this simple orthographic projection negates z.
+        // It is only by negating z that we arrive at a right-handed coordinate system.
+        // One might ask:  at what points in pipeline are we using a left-handed system, and at what points right-handed?
+        projectionLoc = gl.getUniformLocation ( program, 'projection' ) ;
+        gl.uniformMatrix4fv ( projectionLoc, false, flatten(pMatrix) ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        redOffsetZ = 0 ;
+        greenOffsetZ = 0 ;
+        blueOffsetZ = 0 ;
+        var redModelViewMatrix   = translate( 0.0, 0.0, redOffsetZ   ) ;
+        var greenModelViewMatrix = translate( 0.0, 0.0, greenOffsetZ ) ;
+        var blueModelViewMatrix  = translate( 0.0, 0.0, blueOffsetZ  ) ;
+        redModelViewLoc   = gl.getUniformLocation ( program, 'redModelView' ) ;
+        greenModelViewLoc = gl.getUniformLocation ( program, 'greenModelView' ) ;
+        blueModelViewLoc  = gl.getUniformLocation ( program, 'blueModelView' ) ;
+        gl.uniformMatrix4fv ( redModelViewLoc,   false, flatten(redModelViewMatrix)   ) ;
+        gl.uniformMatrix4fv ( greenModelViewLoc, false, flatten(greenModelViewMatrix) ) ;
+        gl.uniformMatrix4fv ( blueModelViewLoc,  false, flatten(blueModelViewMatrix)  ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        currentColorSelection = 'R'.charCodeAt(0) ; // Red
+
+        gl.enable ( gl.DEPTH_TEST ) ;
+        gl.clearColor ( 0.4, 0.4, 0.4, 1.0 ) ;
+
+        window.requestAnimationFrame ( display ) ;
+        } // end init function
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        gl.clear ( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT ) ;
+        gl.drawArrays ( gl.LINES, 0, 4 ) ; // x- & y-axes
+        gl.drawArrays ( gl.TRIANGLE_FAN, 11, 722 ) ; // red circle as triangle fan
+        gl.drawArrays ( gl.TRIANGLES, 4, 3 ) ; // green triangle
+        gl.drawArrays ( gl.TRIANGLE_FAN, 7, 4 ) // blue rectangle as triangle fan
+        gl.flush() ;
+        } // end display
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasKeyPressHandler( event )
+        {
+        console.info ( 'handling ............ ' + event.toString() ) ;
+        console.info ( 'event.code .......... ' + event.code + ' ( ' + (typeof event.code) + ' )' ) ;
+        console.info ( 'event.key ........... ' + event.key + ' ( ' + (typeof event.key) + ' )' ) ;
+        console.info ( 'event.keyCode ....... ' + event.keyCode + ' ( ' + (typeof event.keyCode) + ' )' ) ;
+        console.info ( 'event.shiftKey ...... ' + event.shiftKey + ' ( ' + (typeof event.shiftKey) + ' )' ) ;
+        console.info ( '---------------------------------------' ) ;
+        // var charCodeAt = 'A'.charCodeAt(0) ;
+        // var fromCharCode = String.fromCharCode(65) ;
+        // console.info ( 'charCodeAt .......... ' + charCodeAt + ' ( ' + (typeof charCodeAt) + ' )' ) ;
+        // console.info ( 'fromCharCode ........ ' + fromCharCode + ' ( ' + (typeof fromCharCode) + ' )' ) ;
+        // charCodeAt .......... 65 ( number )
+        // fromCharCode ........ A ( string )
+        var keyValue ;
+        if ( event.key === undefined ) // as in Chrome as of 19 JAN 2015
+          keyValue = event.keyCode ;
+        else // using Firefox in test of 19 JAN 2015
+          keyValue = event.key.charCodeAt(0) ;
+        if ( keyValue === 60 ) // 60 is '<'
+          console.info ( 'DECREMENT Z' ) ;
+        else if ( keyValue === 62 ) // 62 is '>'
+          console.info ( 'INCREMENT Z' ) ;
+        console.info ( '---------------------------------------' ) ;
+        // ---------------------------------------------------------
+        // code attribute
+        //    undefined in both Firefox & Chrome
+        // ---------------------------------------------------------
+        // key attribute
+        //    in Chrome, key attribute is undefined (see http://bugs.jquery.com/ticket/15220)
+        //    in Firefox, appropriate key value is returned as a string
+        // ---------------------------------------------------------
+        // keyCode attribute
+        //   in Firefox, keyCode is 0
+        //   in Chrome, returns ASCII value as a number
+        // According to https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent,
+        // keyCode is deprecated.
+        // ---------------------------------------------------------
+        // Possibly use some sort of "feature detection" to determine which attribute to use.
+        // ---------------------------------------------------------
+        // Example from Chrome:
+        // handling ............ [object KeyboardEvent]
+        // event.code .......... undefined ( undefined )
+        // event.key ........... undefined ( undefined )
+        // event.keyCode ....... 65 ( number )
+        // event.shiftKey ...... true ( boolean )
+        // ---------------------------------------------------------
+        // Example from Firefox:
+        // handling ............ [object KeyboardEvent]
+        // event.code .......... undefined ( undefined )
+        // event.key ........... A ( string )
+        // event.keyCode ....... 0 ( number )
+        // event.shiftKey ...... true ( boolean )
+        // ---------------------------------------------------------
+        var deltaZ = 0.0 ;
+        if ( keyValue === 82 || keyValue === 114 )
+          currentColorSelection = 'R'.charCodeAt(0) ; // Red
+        else if ( keyValue === 71 || keyValue === 103 )
+          currentColorSelection = 'G'.charCodeAt(0) ; // Green
+        else if ( keyValue === 66 || keyValue === 98 )
+          currentColorSelection = 'B'.charCodeAt(0) ; // Blue
+        else if ( keyValue === 60 ) // 60 is '<', decrement z coordinate
+          deltaZ = -0.1 ;
+        else if ( keyValue === 62 ) // 62 is '>', increment z coordinate
+          deltaZ = +0.1 ;
+
+        switch ( currentColorSelection )
+          {
+          case 82 : redOffsetZ   += deltaZ;  break;
+          case 71 : greenOffsetZ += deltaZ;  break;
+          case 66 : blueOffsetZ  += deltaZ;  break;
+          } // end switch
+
+        if ( keyValue === 60 || keyValue === 62 )
+          {
+          var redModelViewMatrix   = translate( 0.0, 0.0, redOffsetZ   ) ;
+          var greenModelViewMatrix = translate( 0.0, 0.0, greenOffsetZ ) ;
+          var blueModelViewMatrix  = translate( 0.0, 0.0, blueOffsetZ  ) ;
+          gl.uniformMatrix4fv ( redModelViewLoc,   false, flatten(redModelViewMatrix)   ) ;
+          gl.uniformMatrix4fv ( greenModelViewLoc, false, flatten(greenModelViewMatrix) ) ;
+          gl.uniformMatrix4fv ( blueModelViewLoc,  false, flatten(blueModelViewMatrix)  ) ;
+          }
+        window.requestAnimationFrame ( display ) ;
+        } // end canvasKeyPressHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <canvas id='myGlCanvas' width='400' height='400'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>
+      Press 'R', 'G', or 'B' key to select among red circle, green triangle, and blue square.<br>
+      After making selection, press greater than (&gt;) repeatedly to increase z-coordinate of selected figure,
+      or press less than (&lt;) repeatedly to decrease z-coordinate of selected figure.
+    </p>
+  </body>
+
+</html>
