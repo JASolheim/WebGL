@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+
+<!--
+Mouse_Down_Up_Move.html    Jeffery Solheim    Illustrates use of mouse press, mouse release, and mouse drag.
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Mouse Down, Mouse Up, and Mouse Move</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec2 position;
+      attribute vec3 color;
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_PointSize = 10.0 ;
+        gl_Position = vec4(position,0.0,1.0);
+        vColor = vec4(color,1.0);
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_FragColor = vColor;
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables accessed by multiple functions ...
+      var canvas ;          //  an HTMLCanvasElement
+      var gl ;              //  a WebGLRenderingContext
+      var positionBuffer ;  //  a WebGLBuffer
+      var position ;        //  an array of positions of vertices
+      var colorBuffer ;     //  a WebGLBuffer
+      var color ;           //  an array of colors of vertices
+      var requestId ;       //  current requestAnimationFrame request
+      var mouseLeftDown ;
+      var mouseLeftDrag ;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        canvas = document.getElementById ( 'myGlCanvas' ) ;
+        canvas.addEventListener ( 'mousedown', canvasMouseDownHandler ) ;
+        canvas.addEventListener ( 'mouseup', canvasMouseUpHandler ) ;
+        canvas.addEventListener ( 'mousemove', canvasMouseMoveHandler ) ;
+        canvas.addEventListener ( 'contextmenu',
+          function (event) { event.preventDefault(); return false; } ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 2, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+        gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+        colorBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        position = [ ] ; // initially, no points
+        color    = [ ] ;
+        gl.clearColor ( 0.4, 0.4, 0.4, 1.0 ) ;
+        mouseLeftDown = false ;
+        mouseLeftDrag = false ;
+        requestId = window.requestAnimationFrame ( display ) ;
+        } // end init function
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        gl.clear ( gl.COLOR_BUFFER_BIT ) ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+        gl.drawArrays ( gl.POINTS, 0, position.length ) ;
+        gl.drawArrays ( gl.LINES, 0, position.length ) ;
+        gl.flush() ;
+        requestId = 0 ;
+        } // end display
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseDownHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDown = true ;
+          var xDown = 2 * event.clientX / canvas.width - 1 ;
+          var yDown = 1 - 2 * event.clientY / canvas.height ;
+          position.push( vec2(xDown,yDown) ) ;
+          position.push( vec2(xDown,yDown) ) ;
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+          if ( ((position.length / 2) % 3) === 0 )
+            { color.push( vec3(0,0,1) ); color.push( vec3(0,0,1) ); }
+          else if ( ((position.length / 2) % 3) === 1 )
+            { color.push( vec3(1,0,0) ); color.push( vec3(1,0,0) ); }
+          else if ( ((position.length / 2) % 3) === 2 )
+            { color.push( vec3(0,1,0) ); color.push( vec3(0,1,0) ); }
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+          console.info ( 'DOWN at ( ' + xDown.toFixed(2) + ', ' + yDown.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          }
+        } // end canvasMouseDownHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseUpHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDown = false ;
+          var xUp = 2 * event.clientX / canvas.width - 1 ;
+          var yUp = 1 - 2 * event.clientY / canvas.height ;
+          position.pop() ;
+          position.push( vec2(xUp,yUp) ) ;
+          console.info ( 'UP   at ( ' + xUp.toFixed(2) + ', ' + yUp.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          }
+        } // end canvasMouseUpHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseMoveHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDrag = mouseLeftDown ;
+          var xMove = 2 * event.clientX / canvas.width - 1 ;
+          var yMove = 1 - 2 * event.clientY / canvas.height ;
+          if ( mouseLeftDrag )
+            {
+            position.pop() ;
+            position.push( vec2(xMove,yMove) ) ;
+            }
+          if ( mouseLeftDrag )
+            console.info ( 'DRAG at ( ' + xMove.toFixed(2) + ', ' + yMove.toFixed(2) + ' )' ) ;
+          else
+            console.info ( 'MOVE at ( ' + xMove.toFixed(2) + ', ' + yMove.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          }
+        } // end canvasMouseMoveHandler
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <canvas id='myGlCanvas' width='600' height='500'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>Draw line segments by pressing left mouse button, dragging, then releasing.  Repeat as desired.</p>
+  </body>
+
+</html>
