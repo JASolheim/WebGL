@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<!--
+Look_At.html    Jeffery Solheim
+Illustrates orthographics and perspective projections, and repositioning of eye via mouse drag.
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Look At</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec3 position;
+      attribute vec3 color;
+      uniform mat4 modelViewMatrix ;
+      uniform mat4 projectionMatrix ;
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        vColor = vec4(color,1.0);
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_FragColor = vColor;
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables accessed by multiple functions ...
+      var canvas ;          //  an HTMLCanvasElement
+      var gl ;              //  a WebGLRenderingContext
+      var requestId ;       //  current requestAnimationFrame request
+      var positionBuffer ;  //  a WebGLBuffer
+      var position ;        //  an array of positions of vertices
+      var colorBuffer ;     //  a WebGLBuffer
+      var color ;           //  an array of colors of vertices
+      var modelViewMatrix ;
+      var modelViewLoc ;    //  location of modelViewMatrix within vertex shader
+      var perspectiveProjectionMatrix ;
+      var orthographicProjectionMatrix ;
+      var projectionLoc ;
+      var projectionType ; // 'P' = Perspective, 'O' = Orthographic
+      var eyeCylindrical ;  // ( rho, phi, y )
+      var eye ;
+      const at  = vec3( 0, 0, 0 ) ;
+      const up  = vec3( 0, 1, 0 ) ;
+      var mouseLeftDown ;
+      var mouseLeftDrag ;
+      var previousX ;
+      var previousY ;
+      var currentX ;
+      var currentY ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function  cylindricalToRectangular ( cylCoord )  //  cylCoord = ( rho, phi, y )
+        {
+        var rho  =  cylCoord [0] ;
+        var phi  =  cylCoord [1] ;
+        var y    =  cylCoord [2] ;
+        var x    =  rho * Math.cos ( phi ) ;
+        var z    =  rho * Math.sin ( phi ) ;
+        return vec3 ( x, y, z ) ;
+        } // end cylindricalToRectangular function
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        canvas = document.getElementById ( 'myGlCanvas' ) ;
+        document.documentElement.addEventListener ( 'keypress', keyPressHandler ) ;
+        canvas.addEventListener ( 'mousedown', canvasMouseDownHandler ) ;
+        canvas.addEventListener ( 'mouseup', canvasMouseUpHandler ) ;
+        canvas.addEventListener ( 'mousemove', canvasMouseMoveHandler ) ;
+        canvas.addEventListener ( 'contextmenu',
+          function (event) { event.preventDefault(); return false; } ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        position // 11 points, each point being 3-D (x, y, & z)
+         = [ vec3(-0.9,+0.0,+0.0), vec3(+0.9,+0.0,+0.0),                       // x axis
+             vec3(+0.0,-0.9,+0.0), vec3(+0.0,+0.9,+0.0),                       // y axis
+             vec3(-0.2,-0.2,+0.1), vec3(+0.6,-0.2,+0.1), vec3(+0.2,+0.4,+0.1), // green triangle
+             vec3(-0.4,-0.4,+0.2), vec3(+0.2,-0.4,+0.2),                       // blue square
+             vec3(+0.2,+0.2,+0.2), vec3(-0.4,+0.2,+0.2)  ] ;                   // blue square
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        color // 11 colors, each color being 3-D (RGB)
+         = [ vec3(1.0,1.0,1.0), vec3(1.0,1.0,1.0),                     //  x-axis
+             vec3(1.0,1.0,1.0), vec3(1.0,1.0,1.0),                     //  y-axis
+             vec3(0.5,0.9,0.5), vec3(0.5,0.9,0.5), vec3(0.5,0.9,0.5),  //  green triangle
+             vec3(0.4,0.4,1.0), vec3(0.4,0.4,1.0),                     //  blue square
+             vec3(0.4,0.4,1.0), vec3(0.4,0.4,1.0)  ] ;                 //  blue square
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+        gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+        colorBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        modelViewLoc = gl.getUniformLocation ( program, 'modelViewMatrix' ) ;
+        eyeCylindrical = vec3 ( 100, Math.PI / 2, 0 ) ;
+        eye = cylindricalToRectangular ( eyeCylindrical ) ;
+        modelViewMatrix = lookAt ( eye, at, up ) ;
+        gl.uniformMatrix4fv ( modelViewLoc, false, flatten(modelViewMatrix) ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        projectionLoc = gl.getUniformLocation ( program, 'projectionMatrix' ) ;
+        orthographicProjectionMatrix = ortho ( -1.0, +1.0, -1.0, +1.0, -1.0, +1000.0 ) ;
+        perspectiveProjectionMatrix = perspective( Math.PI / 3, 1, 1, 1000 ) ;
+        gl.uniformMatrix4fv ( projectionLoc, false, flatten(perspectiveProjectionMatrix) ) ;
+        projectionType = 'P' ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        gl.enable ( gl.DEPTH_TEST ) ;
+        gl.clearColor ( 0.2, 0.2, 0.2, 1.0 ) ;
+        previousX = previousY = currentX = currentY = 0 ;
+        requestId = window.requestAnimationFrame ( display ) ;
+        } // end init function
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        gl.clear ( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT ) ;
+        gl.drawArrays ( gl.LINES, 0, 4 ) ; // x- & y-axes
+        gl.drawArrays ( gl.TRIANGLES, 4, 3 ) ; // green triangle
+        gl.drawArrays ( gl.TRIANGLE_FAN, 7, 4 ) ; // blue square
+        gl.flush() ;
+        requestId = 0 ;
+        } // end display
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseDownHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDown = true ;
+          var xDown = 2 * event.clientX / canvas.width - 1 ;
+          var yDown = 1 - 2 * event.clientY / canvas.height ;
+          console.info ( 'DOWN at ( ' + xDown.toFixed(2) + ', ' + yDown.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          } // end if left mouse button
+        } // end canvasMouseDownHandler
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseUpHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDown = false ;
+          var xUp = 2 * event.clientX / canvas.width - 1 ;
+          var yUp = 1 - 2 * event.clientY / canvas.height ;
+          console.info ( 'UP   at ( ' + xUp.toFixed(2) + ', ' + yUp.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          } // end if left moue button
+        } // end canvasMouseUpHandler
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMouseMoveHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          mouseLeftDrag = mouseLeftDown ;
+          previousX = currentX ;
+          previousY = currentY ;
+          currentX = 2 * event.clientX / canvas.width - 1 ;
+          currentY = 1 - 2 * event.clientY / canvas.height ;
+          if ( mouseLeftDrag )
+            {
+            var deltaX = currentX - previousX ;
+            var deltaY = currentY - previousY ;
+            if ( Math.abs(deltaX) > 0.10 || Math.abs(deltaY) > 0.10 )
+              return ;
+            var rho  =  eyeCylindrical [0] ;
+            var phi  =  eyeCylindrical [1] ;
+            var y    =  eyeCylindrical [2] ;
+            phi -= 4 * deltaX ;
+	        y   += 200 * deltaY ;
+            eyeCylindrical = vec3 ( rho, phi, y ) ;
+            eye = cylindricalToRectangular ( eyeCylindrical ) ;
+            modelViewMatrix = lookAt ( eye, at, up ) ;
+            gl.uniformMatrix4fv ( modelViewLoc, false, flatten(modelViewMatrix) ) ;
+            } // end if mouseLeftDrag
+          if ( mouseLeftDrag )
+            console.info ( 'DRAG at ( ' + currentX.toFixed(2) + ', ' + currentY.toFixed(2) + ' )' ) ;
+          else
+            console.info ( 'MOVE at ( ' + currentX.toFixed(2) + ', ' + currentY.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          } // end if left mouse button
+        } // end canvasMouseMoveHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function keyPressHandler( event )
+        {
+        var keyValue ;
+        if ( event.key === undefined ) // as in Chrome
+          keyValue = event.keyCode ;
+        else // as in Firefox
+          keyValue = event.key.charCodeAt(0) ;
+        if ( keyValue === 80 || keyValue === 112 ) // 80 is 'P'
+          {
+          projectionType = 'P' ;
+          gl.uniformMatrix4fv ( projectionLoc, false, flatten(perspectiveProjectionMatrix) ) ;
+          } // end if 'P'
+        else if ( keyValue === 79 || keyValue === 111 ) // 80 is 'O'
+          {
+          projectionType = 'O' ;
+          gl.uniformMatrix4fv ( projectionLoc, false, flatten(orthographicProjectionMatrix) ) ;
+          } // end if 'P'
+
+        if ( (requestId === undefined) || (requestId === 0)  )
+          requestId = window.requestAnimationFrame ( display ) ;
+        } // end keyPressHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <canvas id='myGlCanvas' width='500' height='500'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>Press 'P' for perspective projection, and press 'O' for orthographic projection.<br>
+       Drag with left mouse button to reposition eye.
+    </p>
+  </body>
+
+</html>
