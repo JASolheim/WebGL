@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+
+<!--
+Animated_Motion.html    Jeffery Solheim    Illustrates use of animation and context menus.
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Animation</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec2 position;
+      uniform float theta;
+      vec2 dummyVar;
+      void main()
+        { dummyVar     = position; // must "use" position; else, it seems to "disappear"
+          gl_Position  = vec4(0.7*cos(theta),0.3*sin(theta), 0.0, 1.0);
+          gl_PointSize = 20.0; }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      void main()
+        { gl_FragColor = vec4(0.5,0.8,1.0,1.0); }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables & constants ...
+      var    gl ;
+      var    previousTimeMs ;
+      var    animationTimeMs ;
+      var    currentlyAnimating ;
+      var    theta = 0.0 ;
+      var    thetaLoc = 0 ;
+      const  PI_OVER_8000 = ( Math.atan(1) / 2000.0 ) ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        var canvas = document.getElementById ( 'glCanvas' ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        var position = [ vec2(+0.70,0) ] ;
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        var positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 2, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        gl.clearColor ( 0.4, 0.4, 0.4, 1.0 ) ;
+        thetaLoc = gl.getUniformLocation ( program, 'theta' ) ;
+        gl.uniform1f ( thetaLoc, theta ) ;
+        previousTimeMs = animationTimeMs = 0 ;
+        currentlyAnimating = false ;
+        window.requestAnimationFrame ( display ) ;
+        } // end init function
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        setTimeout( function()
+          {
+          var currentTimeMs = (new Date()).getTime() ;
+          var deltaTimeMs = currentTimeMs - previousTimeMs ;
+          if ( currentlyAnimating )
+            animationTimeMs += deltaTimeMs ;
+          theta = ( PI_OVER_8000 * animationTimeMs ) ;
+          gl.uniform1f ( thetaLoc, theta ) ;
+          gl.clear ( gl.COLOR_BUFFER_BIT ) ;
+          gl.drawArrays ( gl.POINTS, 0, 1 ) ;
+          gl.flush() ;
+          previousTimeMs = currentTimeMs ;
+          window.requestAnimationFrame ( display ) ;
+          }, 12 ) ;
+        } // end display
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <menu id='canvasMenu' type='context'>
+      <menuitem label='Start Animation' onclick='currentlyAnimating = true; '></menuitem>
+      <menuitem label='Stop Animation'  onclick='currentlyAnimating = false;'></menuitem>
+    </menu>
+    <canvas id='glCanvas' width='400' height='400' contextmenu='canvasMenu'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>Using Firefox (8+), right-click &amp; use context menu to start / stop animation.</p>
+    <p>[HTML5 context menus are currently only supported in Firefox (8+).]</p>
+  </body>
+
+</html>
