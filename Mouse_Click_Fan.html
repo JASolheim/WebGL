@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+
+<!--
+Mouse_Click_Fan.html    Jeffery Solheim    Illustrates use of mouse clicks to create "fan."
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Mouse Click for Fan</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec2 position;
+      attribute vec3 color;
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_PointSize = 4.0 ;
+        gl_Position = vec4(position,0.0,1.0);
+        vColor = vec4(color,1.0);
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_FragColor = vColor;
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables accessed by multiple functions ...
+      var canvas ;          //  an HTMLCanvasElement
+      var gl ;              //  a WebGLRenderingContext
+      var positionBuffer ;  //  a WebGLBuffer
+      var position ;        //  an array of positions of vertices
+      var centerPos ;
+      var previousPos ;
+      var colorBuffer ;     //  a WebGLBuffer
+      var color ;           //  an array of colors of vertices
+      var requestId ;       //  current requestAnimationFrame request
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        canvas = document.getElementById ( 'myGlCanvas' ) ;
+        canvas.addEventListener ( 'click', canvasClickHandler ) ;
+        canvas.addEventListener ( 'contextmenu',
+          function (event) { event.preventDefault(); canvasClickHandler(event); return false; } ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 2, gl.FLOAT, false, 0, 0 ) ;
+        position = [ vec2(-0.9,0.0), vec2(0.9,0.0),      //  x-axis
+                     vec2(0.0,-0.9), vec2(0.0,0.9)  ] ;  //  y-axis
+
+        program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+        gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+        colorBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        color = [ vec3(1.0,1.0,1.0), vec3(1.0,1.0,1.0),      //  x-axis
+                  vec3(1.0,1.0,1.0), vec3(1.0,1.0,1.0)  ] ;  //  y-axis
+
+        gl.clearColor ( 0.6, 0.6, 0.6, 1.0 ) ;
+        requestId = window.requestAnimationFrame ( display ) ;
+        } // end init function
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+
+        gl.clear ( gl.COLOR_BUFFER_BIT ) ;
+        gl.drawArrays ( gl.LINES, 0, 4 ) ; // x- & y-axes
+        gl.drawArrays ( gl.LINES, 4, 2 ) ; // segment between first two points
+        gl.drawArrays ( gl.POINTS, 4, position.length - 4 ) ;
+        gl.drawArrays ( gl.TRIANGLES, 4, position.length - 4 ) ;
+
+        gl.flush() ;
+        requestId = 0 ;
+        } // end display
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasClickHandler( event )
+        {
+        if ( event.button === 0 ) // left mouse button
+          {
+          var xDown = 2 * event.clientX / canvas.width - 1 ;
+          var yDown = 1 - 2 * event.clientY / canvas.height ;
+          if ( position.length <= 4 )
+            centerPos = vec2(xDown,yDown) ;
+
+          if ( position.length < 7 )
+            {
+            position.push( vec2(xDown,yDown) ) ;
+            color.push( vec3(1.0,0.7,0.8) ) ;
+            }
+          else
+            {
+            position.push( centerPos ) ;
+            position.push( previousPos ) ;
+            position.push( vec2(xDown,yDown) ) ;
+            if ( position.length % 2 === 0 )
+              {
+              color.push( vec3(0.6,0.9,0.6) ) ;
+              color.push( vec3(0.6,0.9,0.6) ) ;
+              color.push( vec3(0.6,0.9,0.6) ) ;
+              }
+            else
+              {
+              color.push( vec3(1.0,0.7,0.8) ) ;
+              color.push( vec3(1.0,0.7,0.8) ) ;
+              color.push( vec3(1.0,0.7,0.8) ) ;
+              }
+            }
+
+          previousPos = vec2(xDown,yDown) ;
+          console.info ( 'LEFT CLICK at ( ' + xDown.toFixed(2) + ', ' + yDown.toFixed(2) + ' )' ) ;
+          if ( (requestId === undefined) || (requestId === 0)  )
+            requestId = window.requestAnimationFrame ( display ) ;
+          }
+        } // end canvasClickHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <canvas id='myGlCanvas' width='600' height='500'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>Click left mouse button at various points on canvas.  
+       Repeating causes a "fan" of triangles to appear.</p>
+  </body>
+
+</html>
