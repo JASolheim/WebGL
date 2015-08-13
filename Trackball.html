@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+
+<!--
+Trackball.html    Jeffery Solheim    Simulates functionality of a physical trackball.
+-->
+
+<html>
+
+  <head>
+    <meta charset='UTF-8'>
+    <title>WebGL Trackball</title>
+    <!-- ================================================================================= -->
+    <!-- Following JavaScript scripts available from
+         http://www.cs.unm.edu/~angel/BOOK/INTERACTIVE_COMPUTER_GRAPHICS/SIXTH_EDITION/CODE/WebGL/7E/Common/ -->
+    <script type='text/javascript' src='./webgl-utils.js'></script>
+    <script type='text/javascript' src='./initShaders.js'></script>
+    <script type='text/javascript' src='./MV.js'></script>
+    <!-- ================================================================================= -->
+    <script id='vertex-shader' type='x-shader/x-vertex'>
+      attribute vec2 position;
+      attribute vec3 color;
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_Position = vec4(position,1.0,1.0) ;
+        vColor = vec4(color,1.0);
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script id='fragment-shader' type='x-shader/x-fragment'>
+      varying mediump vec4 vColor;
+      void main()
+        {
+        gl_FragColor = vColor;
+        }
+    </script>
+    <!-- ================================================================================= -->
+    <script>
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      // global variables accessed by multiple functions ...
+      var canvas ;            //  an HTMLCanvasElement
+      var gl ;                //  a WebGLRenderingContext
+      var positionBuffer ;    //  a WebGLBuffer
+      var position ;          //  an array of positions of vertices
+      var colorBuffer ;       //  a WebGLBuffer
+      var color ;             //  an array of colors of vertices
+      var currentMagnitude ;  //  vector's magnitude
+      var currentAngle ;      //  vector's direction
+      var targetMagnitude ;
+      var targetAngle ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function addVectorTip()
+        {
+        var currentHead = position [ position.length - 1 ] ;
+
+        var x = currentHead[0] ;
+        var y = currentHead[1] ;
+        var u = normalize( cross(vec3(x,y,0), vec3(0,0,1)) ) ;
+        var v = normalize( cross(vec3(x,y,0), vec3(0,0,-1)) ) ;
+        var w = normalize( vec3(x,y,0) ) ;
+        var a = subtract(u,w) ;
+        var b = subtract(v,w) ;
+
+        var scaleFactor = currentMagnitude * 0.10 ;
+        var tip1 = vec2( x + scaleFactor * a[0], y + scaleFactor * a[1] ) ;
+        var tip2 = vec2( x + scaleFactor * b[0], y + scaleFactor * b[1] ) ;
+        position.push(currentHead);  position.push(tip1);
+        position.push(currentHead);  position.push(tip2);
+        color.push(vec3(0.9,0.5,0.5));
+        color.push(vec3(0.9,0.5,0.5));
+        color.push(vec3(0.9,0.5,0.5));
+        color.push(vec3(0.9,0.5,0.5));
+        } // end addVectorTip
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function removeVectorTip()
+        {
+        position.pop() ;
+        position.pop() ;
+        position.pop() ;
+        position.pop() ;
+        color.pop() ;
+        color.pop() ;
+        color.pop() ;
+        color.pop() ;
+        } // end removeVectorTip
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function init ()
+        {
+        canvas = document.getElementById ( 'myGlCanvas' ) ;
+        canvas.addEventListener ( 'mousedown', canvasMousedownHandler ) ;
+        document.documentElement.addEventListener ( 'keydown', keyDownHandler ) ;
+        gl = WebGLUtils.setupWebGL( canvas );
+        var program = initShaders ( gl, 'vertex-shader', 'fragment-shader' ) ;
+        gl.useProgram ( program ) ;
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        position = [ vec2(-0.9,0,0),  vec2(+0.9,0,0),  vec2(0,-0.9,0),  vec2(0,+0.9,0) ] ; // axes
+        color    = [ vec3(1,1,1), vec3(1,1,1), vec3(1,1,1), vec3(1,1,1) ] ; // axes
+        // create circle ...
+        position.push ( vec2(0,0) ) ; // center
+        color.push ( vec3(0.2,0.3,0.2) ) ;
+        for ( var i = 0 ; i <= 360 ; i ++ ) // points around circle's periphery
+          {
+          var radians = Math.PI * i / 180.0 ;
+          position.push ( vec2(Math.cos(radians),Math.sin(radians)) ) ;
+          color.push ( vec3(0.2,0.3,0.2) ) ;
+          } // end for loop
+        // create vector ...
+        currentMagnitude = 0;  currentAngle = 0;
+        targetMagnitude  = 0;  targetAngle  = 0;
+        var x = currentMagnitude * Math.cos(currentAngle) ;
+        var y = currentMagnitude * Math.sin(currentAngle) ;
+        position.push(vec2(0,0));  color.push(vec3(0.9,0.5,0.5));  //  tail
+        position.push(vec2(x,y));  color.push(vec3(0.9,0.5,0.5));  //  head
+        addVectorTip() ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexPosAttrib = gl.getAttribLocation ( program, 'position' ) ;
+        gl.enableVertexAttribArray ( program.vertexPosAttrib ) ;
+        positionBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexPosAttrib, 2, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        program.vertexColAttrib = gl.getAttribLocation ( program, 'color' ) ;
+        gl.enableVertexAttribArray ( program.vertexColAttrib ) ;
+        colorBuffer = gl.createBuffer() ;
+        gl.bindBuffer ( gl.ARRAY_BUFFER, colorBuffer ) ;
+        gl.bufferData ( gl.ARRAY_BUFFER, flatten(color), gl.STATIC_DRAW ) ;
+        gl.vertexAttribPointer ( program.vertexColAttrib, 3, gl.FLOAT, false, 0, 0 ) ;
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+        gl.clearColor ( 0.2, 0.2, 0.2, 1.0 ) ;
+        window.requestAnimationFrame ( display ) ;
+        } // end init function
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      window.onload = init ;
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function display ()
+        {
+        setTimeout( function()
+          {
+          removeVectorTip() ;
+          var currentHead = position.pop() ; // remove old vector head
+          var x = currentHead[0] ;
+          var y = currentHead[1] ;
+          currentMagnitude = Math.sqrt ( (x * x) + (y * y) ) ;
+          currentAngle     = Math.atan2 ( y, x ) ;
+          // --------------------------------------------------
+          var deltaMag = (targetMagnitude - currentMagnitude) ;
+          currentMagnitude += ( 0.05 * deltaMag ) ;
+          // --------------------------------------------------
+          var deltaAng = (targetAngle - currentAngle) ;
+          var absDeltaAng = Math.abs ( deltaAng ) ;
+          var outerAng = (2 * Math.PI) - absDeltaAng ;
+          var delta = Math.sign(deltaAng) * Math.min (absDeltaAng, outerAng) ;
+          if ( absDeltaAng > Math.PI ) // target repels current
+            currentAngle -= ( 0.05 * delta ) ;
+          else // target attracts current
+            currentAngle += ( 0.05 * delta ) ;
+          // --------------------------------------------------
+          var x = currentMagnitude * Math.cos(currentAngle) ;
+          var y = currentMagnitude * Math.sin(currentAngle) ;
+          var newHead = vec2 ( x, y ) ;
+          position.push ( newHead ) ; // add new vector head
+          addVectorTip() ;
+          gl.bindBuffer ( gl.ARRAY_BUFFER, positionBuffer ) ;
+          gl.bufferData ( gl.ARRAY_BUFFER, flatten(position), gl.STATIC_DRAW ) ;
+
+          gl.clear ( gl.COLOR_BUFFER_BIT ) ;
+          gl.lineWidth ( 1.0 ) ;
+          gl.drawArrays ( gl.TRIANGLE_FAN, 4, 362 ) ; // unit circle
+          gl.drawArrays ( gl.LINES, 0, 4 ) ;          // x- & y-axes
+          gl.drawArrays ( gl.LINES, 366, 2 ) ;        // vector
+          gl.drawArrays ( gl.LINES, 368, 4 ) ;        // vector tip
+          gl.flush() ;
+          var deltaAngle  = Math.abs ( targetAngle - currentAngle ) ;
+          if ( deltaAngle > (Math.PI / 1800) )
+            window.requestAnimationFrame ( display ) ;
+          }, 12 ) ;
+        } // end display
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function canvasMousedownHandler( event )
+        {
+        var xDown = 2 * event.clientX / canvas.width - 1 ;
+        var yDown = 1 - 2 * event.clientY / canvas.height ;
+        var proposedMagnitudeSquared = (xDown * xDown) + (yDown * yDown) ;
+        if ( proposedMagnitudeSquared > 1 )
+          return ;
+        targetMagnitude = Math.sqrt(proposedMagnitudeSquared) ;
+        targetAngle     = Math.atan2(yDown,xDown) ;
+        window.requestAnimationFrame ( display ) ;
+        } // end canvasMousedownHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+      function keyDownHandler( event )
+        {
+        var keyValue ;
+        if ( event.key === undefined ) // as in Chrome
+          keyValue = event.keyCode ;
+        else // as in Firefox
+          keyValue = event.key.charCodeAt(0) ;
+        if ( keyValue === 27 ) // 27 is ESCAPE
+          {
+          targetMagnitude = 0 ;
+          targetAngle     = 0 ;
+          }
+        window.requestAnimationFrame ( display ) ;
+        } // end keyDownHandler
+	  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    </script>
+    <!-- ================================================================================= -->
+  </head>
+
+  <body>
+    <canvas id='myGlCanvas' width='500' height='500'>
+      Browser doesn't support HTML5 <code>&lt;canvas&gt;</code> element.
+    </canvas>
+    <p>
+      Repeatly click within canvas.<br>
+      Each click causes vector's magnitude &amp; direction to change.<br>
+      Could be used to simulate a physical trackball.
+    </p>
+  </body>
+
+</html>
